@@ -1,4 +1,4 @@
-<!-- Rephrase Game - Updated with Random Give Up Message -->
+<!-- Rephrase Game - Cleaned and Fixed -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -48,8 +48,15 @@
       font-size: 0.95em;
       color: #888;
       font-style: italic;
-      margin-bottom: 20px;
+      margin-bottom: 10px;
       text-align: center;
+    }
+
+    #timer {
+      text-align: center;
+      margin-top: 10px;
+      font-weight: bold;
+      font-size: 1em;
     }
 
     #phrase {
@@ -175,7 +182,13 @@
       color: green;
       text-align: center;
     }
-
+    .space-tile {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      width: 16px;
+      height: 32px;
+    }
     #shareBtn {
       display: none;
       margin-top: 10px;
@@ -200,24 +213,22 @@
     }
   </style>
 </head>
-  <body>
+<body>
 
-    <div class="header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2em;">
-      <div style="width: 33%;"></div>
-
-      <h1 style="font-family: Georgia, serif; font-size: 2.3em; color: #444; text-align: center; margin: 0;">
-        Rephrase
-      </h1>
-
-      <div style="width: 33%; text-align: right;">
-        <button id="howToPlayButton" onclick="toggleInstructions()" style="background: none; border: none; color: #007B8A; font-size: 0.95em; cursor: pointer; text-decoration: underline;">
-          How to Play
-        </button>
-      </div>
+  <div class="header-row" style="margin-bottom: 0.2em;">
+    <div style="width: 33%; text-align: left;">
+      <button id="archiveButton" onclick="goToArchive()" style="background: none; border: none; color: #007B8A; font-size: 0.95em; cursor: pointer; text-decoration: underline;">
+        Archive
+      </button>
     </div>
-
+    <h1>Rephrase</h1>
+    <div style="width: 33%; text-align: right;">
+      <button id="howToPlayButton" onclick="toggleInstructions()">How to Play</button>
+    </div>
+  </div>
   <div id="date">Puzzle #{{ puzzle_number }} • {{ date }}</div>
   <div id="byline">By Chase Dittrich</div>
+  <div id="timer"></div>
 
   <div id="instructionBox">
     <strong>Welcome to Rephrase!</strong><br><br>
@@ -230,7 +241,7 @@
     </ul>
   </div>
 
-  <div id="phrase">{{ phrase }}</div>
+ 
   <div id="letterPool"></div>
 
   <input id="input" type="text" placeholder="Enter word" onkeydown="handleKey(event)" />
@@ -238,7 +249,7 @@
 
   <div class="button-row">
     <button onclick="submitWord()">Submit</button>
-    <button onclick="shuffleLetters()">Shuffle Letters</button>
+    <button onclick="shuffleLetters()">Shuffle </button>
     <button onclick="giveUp()">Give Up</button>
   </div>
 
@@ -271,19 +282,28 @@
     }
 
     async function updateProgress() {
+      if (words.length === 0) {
+        renderLetterPool();
+        document.getElementById('progress').style.display = 'none';  // Hide it
+        return;
+      }
+
       const res = await fetch('/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ words })
       });
+
       const j = await res.json();
 
       if (j.ok) {
-        document.getElementById('progress').style.display = 'block';
-        document.getElementById('progress').innerText =
-          j.percent + '% used (' + j.used_letters + '/' + j.total_letters + ')';
-
-        if (j.percent === 100) {
+        if (words.length > 0) {
+          document.getElementById('progress').style.display = 'block';
+          document.getElementById('progress').innerText =
+            j.percent + '% of letters used (' + j.used_letters + '/' + j.total_letters + ')';
+        }
+        if (j.percent === 100 && words.length > 0) {
+          stopTimer();
           document.getElementById('winMessage').style.display = 'block';
           document.getElementById('winMessage').innerText =
             `🎉 You used all the letters! Perfect score in ${words.length} words!`;
@@ -294,6 +314,42 @@
       }
 
       renderLetterPool();
+    }
+    async function loadArchive() {
+      const day = document.getElementById("archiveSelect").value;
+      if (!day) return;
+
+      const res = await fetch(`/archive/${day}`);
+      if (!res.ok) {
+        alert("Could not load puzzle.");
+        return;
+      }
+
+      const puzzle = await res.json();
+      // Reset everything
+      words = [];
+      gaveUp = false;
+      startTime = null;
+      finalTime = null;
+      clearInterval(timerInterval);
+
+      // Update the interface
+      document.getElementById('input').style.display = 'inline-block';
+      document.querySelector('.button-row').style.display = 'flex';
+      document.getElementById('winMessage').style.display = 'none';
+      document.getElementById('shareBtn').style.display = 'none';
+      document.getElementById('copyConfirm').style.display = 'none';
+      document.getElementById('progress').style.display = 'none';
+
+      // Update globals
+      window.puzzleLetters = puzzle.letters;
+      window.originalPhrase = puzzle.phrase;
+
+      // Update display
+      renderLetterPool(puzzle.phrase);
+      renderWordList();
+      updateTimerDisplay();
+      startTimer();
     }
 
     async function submitWord() {
@@ -306,6 +362,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ word: w })
       });
+
       const j = await res.json();
 
       if (j.ok) {
@@ -314,34 +371,43 @@
         await updateProgress();
       } else {
         showInvalidInput(j.message);
+        // Do NOT add the word, do NOT call updateProgress
       }
 
       document.getElementById('input').value = '';
     }
-
+    function goToArchive() {
+      window.location.href = "/archive.html";
+    }
     function renderLetterPool() {
-      const phrase = "{{ phrase|lower }}".replace(/[^a-z]/g, '');
+      const phrase = (window.originalPhrase || "{{ phrase|lower }}").toLowerCase();
+      const cleanedPhrase = phrase.replace(/[^a-z\s]/g, '');  // Keep letters and spaces
       const letterCounts = {};
-      for (let letter of phrase) {
-        letterCounts[letter] = (letterCounts[letter] || 0) + 1;
+      const poolTiles = [];
+
+      for (let letter of cleanedPhrase) {
+        if (letter === ' ') {
+          poolTiles.push('<div class="letter-tile space-tile"></div>'); // Spacer tile
+        } else {
+          letterCounts[letter] = (letterCounts[letter] || 0) + 1;
+          poolTiles.push(`<div class="letter-tile">${letter.toUpperCase()}</div>`);
+        }
       }
 
       for (let word of words) {
         for (let letter of word.toLowerCase()) {
-          if (letterCounts[letter]) {
-            letterCounts[letter]--;
+          for (let i = 0; i < poolTiles.length; i++) {
+            if (
+              poolTiles[i].includes(`>${letter.toUpperCase()}<`)
+            ) {
+              poolTiles[i] = '';  // remove used letter
+              break;
+            }
           }
         }
       }
 
-      let output = "";
-      for (let letter in letterCounts) {
-        for (let i = 0; i < letterCounts[letter]; i++) {
-          output += `<div class="letter-tile">${letter.toUpperCase()}</div>`;
-        }
-      }
-
-      document.getElementById("letterPool").innerHTML = output;
+      document.getElementById("letterPool").innerHTML = poolTiles.filter(Boolean).join('');
     }
 
     function renderWordList() {
@@ -390,7 +456,7 @@
 
     function giveUp() {
       gaveUp = true;
-
+      stopTimer();  // 🛑 Add this line to stop the timer immediately
       const randomMessage =
         giveUpMessages[Math.floor(Math.random() * giveUpMessages.length)];
 
@@ -405,29 +471,67 @@
       updateProgress();
     }
 
+    let startTime = null;
+    let timerInterval = null;
+    let finalTime = null;
+
+    function startTimer() {
+      startTime = Date.now();
+      timerInterval = setInterval(updateTimerDisplay, 1000);
+    }
+
+    function stopTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        finalTime = Math.floor((Date.now() - startTime) / 1000);
+        updateTimerDisplay(true);
+      }
+    }
+
+    function updateTimerDisplay(force = false) {
+      const now = Date.now();
+      const seconds = force ? finalTime : Math.floor((now - startTime) / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = seconds % 60;
+
+      document.getElementById("timer").innerText =
+        `⏱ Time: ${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+
     function shareResult() {
       const phrase = "{{ phrase }}";
       const number = {{ puzzle_number }};
       const count = words.length;
       const progressText = document.getElementById("progress").innerText;
 
+      let timeDisplay = "⏱ Time: N/A";
+      if (finalTime !== null) {
+        const minutes = Math.floor(finalTime / 60);
+        const seconds = finalTime % 60;
+        timeDisplay = `⏱ Time: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+      }
+
       const result = `🟩 Rephrase #${number}
-${progressText}
-📝 ${count} word${count !== 1 ? 's' : ''}
-💬 Phrase: “${phrase}”`;
+    ${progressText}
+    📝 ${count} word${count !== 1 ? 's' : ''}
+    ${timeDisplay}
+    💬 Phrase: “${phrase}”`;
 
-    navigator.clipboard.writeText(result).then(() => {
-      const msg = document.getElementById('copyConfirm');
-      msg.style.display = 'block';
-      setTimeout(() => {
-        msg.style.display = 'none';
-      }, 2500);
-    });
-
+      navigator.clipboard.writeText(result).then(() => {
+        const msg = document.getElementById('copyConfirm');
+        msg.style.display = 'block';
+        setTimeout(() => {
+          msg.style.display = 'none';
+        }, 2500);
+      });
     }
-
+    function goToArchive() {
+      window.location.href = '/archive';
+    }
     renderLetterPool();
     renderWordList();
+    updateProgress();
+    startTimer();
   </script>
 </body>
 </html>
