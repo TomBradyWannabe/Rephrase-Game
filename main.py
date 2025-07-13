@@ -146,18 +146,48 @@ def play_archive_day(day):
 
 @app.route('/archive')
 def archive():
-    today = get_today()
-    days_since_start = (today - PUZZLE_START_DATE).days
-    past_days = list(range(1, days_since_start))
+    # Get the list of all JSON files in the puzzles folder
+    puzzle_files = [f for f in os.listdir('puzzles') if f.endswith('.json')]
+    past_days = [int(f.split('.')[0]) for f in puzzle_files]  # Extract the day number from the filename
+    past_days.sort()  # Sort the days if they aren't already sorted
+
+    # Get the current day number (e.g., if today is Day 2, then exclude it)
+    current_day = get_puzzle_number()
+
+    # Exclude the current day from the past_days list
+    past_days = [day for day in past_days if day < current_day]
+
     return render_template('archive.html', past_days=past_days)
+
+
 
 @app.route('/archive/<int:day>')
 def get_archive(day):
     try:
-        filename = f"{day:03}.json"
+        # Construct the filename with zero-padded day (e.g., '001.json', '002.json')
+        filename = f"puzzles/{day:03}.json"  # Correct path to your JSON files
+
+        # Print the current working directory for debugging
+        print(f"Current Working Directory: {os.getcwd()}")
+
+        # Print the full path where Flask is trying to access the file
+        full_path = os.path.join(os.getcwd(), filename)
+        print(f"Full file path: {full_path}")
+
+        # Attempt to send the file from the 'puzzles' directory
         return send_from_directory('puzzles', filename)
+    except FileNotFoundError:
+        # If the file is not found, print the error for debugging
+        print(f"File {filename} not found!")
+        return jsonify({'error': 'Puzzle not found'}), 404
+
+@app.route('/puzzles/<filename>')
+def serve_puzzle(filename):
+    try:
+        # Serve static files from the 'puzzles' folder
+        return app.send_static_file(f"puzzles/{filename}")
     except FileNotFoundError:
         return jsonify({'error': 'Puzzle not found'}), 404
 
 if __name__ == '__main__':
-    app.run(debug=False)
+    app.run(debug=False)  # Ensure this line is properly indented to run the app

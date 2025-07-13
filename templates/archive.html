@@ -1,4 +1,3 @@
-<!-- archive.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -60,16 +59,18 @@
   <div class="archive-grid" id="archiveList"></div>
 
   <script>
-    const currentDay = {{ current_day }};  // Passed from Flask
+    const pastDays = {{ past_days | tojson }};  // Now the list is passed correctly from Flask
+
     const container = document.getElementById("archiveList");
 
-    for (let day = 1; day < currentDay; day++) {
+    pastDays.forEach((day) => {
       const link = document.createElement("a");
-      link.href = `/archive/${day}`;
+      link.href = `/archive/${day.toString().padStart(3, '0')}`;  // Ensure it's zero-padded
       link.className = "day-link";
       link.textContent = `Day ${day}`;
       container.appendChild(link);
-    }
+    });
   </script>
+
 </body>
 </html>

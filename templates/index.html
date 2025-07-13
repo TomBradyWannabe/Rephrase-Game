@@ -71,20 +71,27 @@
     }
 
     #letterPool {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(32px, 1fr));
-      gap: 8px;
+      display: flex;
+      flex-wrap: wrap; /* Allow wrapping of words to next line */
+      gap: 8px; /* Space between words */
       padding: 12px;
       border-radius: 12px;
       background: #fdfdf5;
       border: 1px solid #ccc;
-      box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
       margin-bottom: 20px;
-      justify-items: center;
+      justify-content: flex-start;
+    }
+
+    .word-tile {
+      display: inline-flex;
+      gap: 8px; /* Space between letters within the word */
+      flex-wrap: nowrap; /* Prevent word from wrapping */
+      white-space: nowrap; /* Prevent word from breaking */
     }
 
     .letter-tile {
-      display: flex;
+      display: inline-flex;
       justify-content: center;
       align-items: center;
       width: 32px;
@@ -93,9 +100,10 @@
       border-radius: 6px;
       font-weight: bold;
       font-size: 1.1em;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
       border: 1px solid #ddd;
     }
+
 
     #input {
       width: calc(100% - 20px);
@@ -153,20 +161,6 @@
       align-items: center;
     }
 
-    .remove-btn {
-      background: none;
-      color: #888;
-      border: none;
-      font-size: 1em;
-      cursor: pointer;
-      padding: 0 6px;
-      transition: color 0.2s;
-    }
-
-    .remove-btn:hover {
-      color: #c00;
-    }
-
     #progress {
       margin-top: 20px;
       font-weight: bold;
@@ -211,6 +205,84 @@
       padding-left: 20px;
       margin: 0;
     }
+    .badge {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.2em;
+      font-weight: bold;
+      background-color: rgba(0, 255, 0, 0.8); /* Light green background */
+      color: white;
+      padding: 10px 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+      opacity: 0;
+      animation: fadeInOut 2s forwards;
+    }
+
+    @keyframes fadeInOut {
+      0% {
+        opacity: 0;
+      }
+      25% {
+        opacity: 1;
+      }
+      75% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+      }
+    }
+    .word-tile {
+      position: relative;  /* Ensure the badge is positioned relative to the word box */
+      display: flex;  /* Use flexbox for better alignment */
+      justify-content: space-between;  /* Space between the badge and X button */
+      align-items: center;  /* Vertically center the elements */
+      white-space: nowrap;  /* Prevent word from breaking */
+      gap: 8px;  /* Space between the letters and elements */
+    }
+
+    .word-badge {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.8em;
+      font-weight: bold;
+      color: #ffffff;  /* Pale off-white text */
+      padding: 5px 10px;
+      border-radius: 50%;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      z-index: 10;
+    }
+
+    .word-badge.badge-7plus {
+      background-color: #d69f1f;  /* Muted gold-orange for 7+ badge */
+    }
+
+    .word-badge.badge-5plus {
+      background-color: #9b3b55;  /* Dark magenta for 5+ badge */
+    }
+
+    .remove-btn {
+      background: none;
+      color: #888;
+      border: none;
+      font-size: 1em;
+      cursor: pointer;
+      padding: 0 6px;
+      transition: color 0.2s;
+      position: relative;  /* Position it inside the word tile */
+      margin-left: auto;  /* Push the X button to the far right */
+    }
+
+    .remove-btn:hover {
+      color: #c00;
+    }
+
+
   </style>
 </head>
 <body>
@@ -353,10 +425,51 @@
     }
 
     async function submitWord() {
+      // Clear any previous error message
       document.getElementById('errorMessage').style.display = 'none';
+
+      // Get the word entered by the user and trim any spaces
       const w = document.getElementById('input').value.trim();
       if (!w) return;
 
+      // Get the original phrase and prepare it for plural check
+      const phrase = (window.originalPhrase || "{{ phrase|lower }}").toLowerCase();
+      const phraseWords = new Set(phrase.split(/\s+/));  // Split the phrase into words
+
+      // If the word is plural and its singular version is in the phrase, reject it
+      if (w.length > 3 && w.endsWith('s')) {
+        const singularWord = w.slice(0, -1);  // Remove the "s" to get the singular version
+        if (phraseWords.has(singularWord)) {
+          showInvalidInput(`The plural form '${w}' is not allowed because the singular form '${singularWord}' is in the phrase.`);
+          return;  // Prevent the word from being entered
+        }
+      }
+
+      // Get the letter pool from the DOM
+      const letterPool = Array.from(document.querySelectorAll('.letter-tile'))
+        .map(tile => tile.innerText.toLowerCase());  // Get available letters in the pool
+
+      // Count the letters in the pool
+      const poolLetterCounts = letterPool.reduce((counts, letter) => {
+        counts[letter] = (counts[letter] || 0) + 1;
+        return counts;
+      }, {});
+
+      // Check if the word uses only letters in the pool and doesn't exceed the available count
+      const wordLetterCounts = Array.from(w.toLowerCase()).reduce((counts, letter) => {
+        counts[letter] = (counts[letter] || 0) + 1;
+        return counts;
+      }, {});
+
+      // Validate the word against the pool
+      for (let letter in wordLetterCounts) {
+        if (!poolLetterCounts[letter] || wordLetterCounts[letter] > poolLetterCounts[letter]) {
+          showInvalidInput(`Letter '${letter.toUpperCase()}' is not in the pool or overused.`);
+          return;  // Immediately stop if there's an invalid letter
+        }
+      }
+
+      // Send the word to the server for further validation
       const res = await fetch('/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -366,15 +479,67 @@
       const j = await res.json();
 
       if (j.ok) {
-        words.push(w);
+        words.push(w);  // Only add the word if the server validates it as okay
         renderWordList();
         await updateProgress();
+
+        // Find the word entry element after it's added to the list
+        const wordElement = document.querySelector(`#word-${words.length - 1}`);
+
+        // Ensure the wordElement exists before proceeding
+        if (!wordElement) {
+          console.error(`Word element #word-${words.length - 1} not found!`);
+          return;  // Exit early if wordElement doesn't exist
+        }
+
+        // Display badge next to the word based on word length
+        if (w.length >= 7) {
+          addBadge(wordElement, "7+");
+        } else if (w.length >= 5) {
+          addBadge(wordElement, "5+");
+        }
       } else {
-        showInvalidInput(j.message);
-        // Do NOT add the word, do NOT call updateProgress
+        showInvalidInput(j.message);  // Handle server-side validation errors
       }
 
-      document.getElementById('input').value = '';
+      document.getElementById('input').value = '';  // Clear input after submission
+    }
+
+    function addBadge(wordElement, badgeType) {
+      // Safe name for badge to avoid issues with special characters like '+'
+      const safeBadgeType = 'badge-' + badgeType.replace('+', 'plus');
+      console.log(`Adding badge: ${safeBadgeType}`);
+
+      // Check if the badge already exists for this word to prevent duplicates
+      const existingBadge = wordElement.querySelector(`.word-badge.${safeBadgeType}`);
+      console.log(existingBadge);  // Log existing badge to check
+
+      if (!existingBadge) {
+        const badge = document.createElement("div");
+        badge.className = `word-badge ${safeBadgeType}`;
+        badge.innerText = badgeType;
+
+        console.log("Badge created:", badge);  // Log badge creation
+
+        // Append the badge inside the word element without removing any existing badges
+        wordElement.appendChild(badge);  // Add badge to the same word element
+      }
+    }
+    
+
+
+    function showBadge(message) {
+      const badge = document.createElement("div");
+      badge.className = "badge";
+      badge.innerText = message;
+
+      // Append the badge to the body or another container
+      document.body.appendChild(badge);
+
+      // Remove the badge after a short delay (e.g., 2 seconds)
+      setTimeout(() => {
+        badge.remove();
+      }, 2000); // 2 seconds
     }
     function goToArchive() {
       window.location.href = "/archive.html";
@@ -413,7 +578,7 @@
     function renderWordList() {
       document.getElementById('words').innerHTML =
         words.map((x, i) =>
-          `<li>${x} <button class="remove-btn" onclick="removeWord(${i})">✕</button></li>`
+          `<li id="word-${i}">${x} <button class="remove-btn" onclick="removeWord(${i})">✕</button></li>`
         ).join('');
     }
 
